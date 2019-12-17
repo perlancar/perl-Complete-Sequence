@@ -22,7 +22,7 @@ our %SPEC;
 our $COMPLETE_SEQUENCE_TRACE = $ENV{COMPLETE_SEQUENCE_TRACE} // 0;
 
 sub _get_strings_from_item {
-    my ($item) = @_;
+    my ($item, $stash) = @_;
 
     my @array;
     my $ref = ref $item;
@@ -31,13 +31,13 @@ sub _get_strings_from_item {
     } elsif ($ref eq 'ARRAY') {
         push @array, @$item;
     } elsif ($ref eq 'CODE') {
-        push @array, _get_strings_from_item( $item->() );
+        push @array, _get_strings_from_item($item->($stash), $stash);
     } elsif ($ref eq 'HASH') {
         if (defined $item->{alternative}) {
-            push @array, map { _get_strings_from_item($_) }
+            push @array, map { _get_strings_from_item($_, $stash) }
                 @{ $item->{alternative} };
         } elsif (defined $item->{sequence} && @{ $item->{sequence} }) {
-            my @set = map { [_get_strings_from_item($_)] }
+            my @set = map { [_get_strings_from_item($_, $stash)] }
                 @{ $item->{sequence} };
             #use DD; dd \@set;
             # sigh, this module is quite fussy. it won't accept
@@ -130,6 +130,10 @@ A sequence structure is an array of items. An item can be:
 
 * a coderef (will be called to extract an item)
 
+  Coderef will be called with `$stash` argument which contains various
+  information, e.g. the index of the sequence item (`item_index`), the completed
+  parts (`completed_item_words`), the current word (`cur_word`), etc.
+
 * a hash (another sequence or alternative of items)
 
 If you want to specify another sub-sequence of items:
@@ -159,11 +163,17 @@ sub complete_sequence {
     my $orig_word = $word;
     my @prefixes_from_completed_items;
 
+    my $stash = {
+        completed_item_words => \@prefixes_from_completed_items,
+        cur_word => $word,
+        orig_word => $orig_word,
+    };
+
     my $itemidx = -1;
     for my $item (@$sequence) {
-        $itemidx++;
+        $itemidx++; $stash->{item_index} = $itemidx;
         log_trace("[compseq] Looking at sequence item[$itemidx] : %s", $item) if $COMPLETE_SEQUENCE_TRACE;
-        my @array = _get_strings_from_item($item);
+        my @array = _get_strings_from_item($item, $stash);
         log_trace("[compseq] Result from sequence item[$itemidx]: %s", \@array) if $COMPLETE_SEQUENCE_TRACE;
         my $res = Complete::Util::complete_array_elem(
             word => $word,
@@ -173,8 +183,9 @@ sub complete_sequence {
             # the word can be completed directly (unambiguously) with this item.
             # move on to get more words from the next item.
             log_trace("[compseq] Word ($word) can be completed unambiguously with this sequence item[$itemidx], moving on to the next sequence item") if $COMPLETE_SEQUENCE_TRACE;
-            push @prefixes_from_completed_items, $res->[0];
             substr($word, 0, length $res->[0]) = "";
+            $stash->{cur_word} = $word;
+            push @prefixes_from_completed_items, $res->[0];
             next;
         } elsif ($res && @$res > 1) {
             # the word can be completed with several choices from this item.
@@ -196,6 +207,7 @@ sub complete_sequence {
             }
             if ($num_matches == 1) {
                 substr($word, 0, length($matching_str)) = "";
+                $stash->{cur_word} = $word;
                 push @prefixes_from_completed_items, $matching_str;
                 log_trace("[compseq] Word ($word) cannot be completed by this sequence item[$itemidx] because part of the word matches previous sequence item(s); completed_parts=%s, word=%s", \@prefixes_from_completed_items, $word) if $COMPLETE_SEQUENCE_TRACE;
                 next;
