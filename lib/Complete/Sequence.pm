@@ -19,6 +19,8 @@ our @EXPORT_OK = qw(
 
 our %SPEC;
 
+our $COMPLETE_SEQUENCE_TRACE = $ENV{COMPLETE_SEQUENCE_TRACE} // 0;
+
 sub _get_strings_from_item {
     my ($item) = @_;
 
@@ -157,8 +159,12 @@ sub complete_sequence {
     my $orig_word = $word;
     my @prefixes_from_completed_items;
 
+    my $itemidx = -1;
     for my $item (@$sequence) {
+        $itemidx++;
+        log_trace("[compseq] Looking at sequence item[$itemidx] : %s", $item) if $COMPLETE_SEQUENCE_TRACE;
         my @array = _get_strings_from_item($item);
+        log_trace("[compseq] Result from sequence item[$itemidx]: %s", \@array) if $COMPLETE_SEQUENCE_TRACE;
         my $res = Complete::Util::complete_array_elem(
             word => $word,
             array => \@array,
@@ -166,13 +172,16 @@ sub complete_sequence {
         if ($res && @$res == 1) {
             # the word can be completed directly (unambiguously) with this item.
             # move on to get more words from the next item.
+            log_trace("[compseq] Word ($word) can be completed unambiguously with this sequence item[$itemidx], moving on to the next sequence item") if $COMPLETE_SEQUENCE_TRACE;
             push @prefixes_from_completed_items, $res->[0];
             substr($word, 0, length $res->[0]) = "";
             next;
         } elsif ($res && @$res > 1) {
             # the word can be completed with several choices from this item.
             # present the choices as the final answer.
-            return [map { join("", @prefixes_from_completed_items, $_) } @$res];
+            my $compres = [map { join("", @prefixes_from_completed_items, $_) } @$res];
+            log_trace("[compseq] Word ($word) can be completed with several choices from this sequence item[$itemidx], returning final result: %s", $compres) if $COMPLETE_SEQUENCE_TRACE;
+            return $compres;
         } else {
             # the word cannot be completed with this item. it can be that the
             # word already contains this item and the next.
@@ -188,25 +197,36 @@ sub complete_sequence {
             if ($num_matches == 1) {
                 substr($word, 0, length($matching_str)) = "";
                 push @prefixes_from_completed_items, $matching_str;
+                log_trace("[compseq] Word ($word) cannot be completed by this sequence item[$itemidx] because part of the word matches previous sequence item(s); completed_parts=%s, word=%s", \@prefixes_from_completed_items, $word) if $COMPLETE_SEQUENCE_TRACE;
                 next;
             }
 
             # nope, this word simply doesn't match
+            log_trace("[compseq] Word ($word) cannot be completed by this sequence item[$itemidx], giving up the rest of the sequence items") if $COMPLETE_SEQUENCE_TRACE;
             goto RETURN;
         }
     }
 
   RETURN:
+    my $compres;
     if (@prefixes_from_completed_items) {
-        return [join("", @prefixes_from_completed_items)];
+        $compres = [join("", @prefixes_from_completed_items)];
     } else {
-        return [];
+        $compres = [];
     }
-
+    log_trace("[compseq] Returning final result: %s", $compres) if $COMPLETE_SEQUENCE_TRACE;
+    $compres;
 }
 
 1;
 # ABSTRACT:
+
+=head1 ENVIRONMENT
+
+=head2 COMPLETE_SEQUENCE_TRACE
+
+Bool. If set to true, will display more log statements for debugging.
+
 
 =head1 SEE ALSO
 
