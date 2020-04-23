@@ -24,31 +24,33 @@ our $COMPLETE_SEQUENCE_TRACE = $ENV{COMPLETE_SEQUENCE_TRACE} // 0;
 sub _get_strings_from_item {
     my ($item, $stash) = @_;
 
-    my @array;
+    my @strings;
     my $ref = ref $item;
     if (!$ref) {
-        push @array, $item;
+        push @strings, $item;
     } elsif ($ref eq 'ARRAY') {
-        push @array, @$item;
+        push @strings, @$item;
     } elsif ($ref eq 'CODE') {
-        push @array, _get_strings_from_item($item->($stash), $stash);
+        push @strings, _get_strings_from_item($item->($stash), $stash);
     } elsif ($ref eq 'HASH') {
         if (defined $item->{alternative}) {
-            push @array, map { _get_strings_from_item($_, $stash) }
+            push @strings, map { _get_strings_from_item($_, $stash) }
                 @{ $item->{alternative} };
         } elsif (defined $item->{sequence} && @{ $item->{sequence} }) {
-            my @set = map { [_get_strings_from_item($_, $stash)] }
+            my @sets = map { [_get_strings_from_item($_, $stash)] }
                 @{ $item->{sequence} };
-            #use DD; dd \@set;
-            # sigh, this module is quite fussy. it won't accept
-            if (@set > 1) {
+            #use DD; dd \@sets;
+
+            # sigh, this Set::CrossProduct module is quite fussy. it won't
+            # accept a single set
+            if (@sets > 1) {
                 require Set::CrossProduct;
-                my $scp = Set::CrossProduct->new(\@set);
+                my $scp = Set::CrossProduct->new(\@sets);
                 while (my $tuple = $scp->get) {
-                    push @array, join("", @$tuple);
+                    push @strings, join("", @$tuple);
                 }
-            } elsif (@set == 1) {
-                push @array, @{ $set[0] };
+            } elsif (@sets == 1) {
+                push @strings, @{ $sets[0] };
             }
         } else {
             die "Need alternative or sequence";
@@ -56,7 +58,7 @@ sub _get_strings_from_item {
     } else {
         die "Invalid item: $item";
     }
-    @array;
+    @strings;
 }
 
 $SPEC{complete_sequence} = {
