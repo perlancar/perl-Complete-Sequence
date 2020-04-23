@@ -58,6 +58,7 @@ sub _get_strings_from_item {
     } else {
         die "Invalid item: $item";
     }
+    #log_trace("TMP:_get_strings_from_item(%s)=%s", $item, \@strings) if $COMPLETE_SEQUENCE_TRACE;
     @strings;
 }
 
@@ -175,17 +176,18 @@ sub complete_sequence {
     for my $item (@$sequence) {
         $itemidx++; $stash->{item_index} = $itemidx;
         log_trace("[compseq] Looking at sequence item[$itemidx] : %s", $item) if $COMPLETE_SEQUENCE_TRACE;
-        my @array = _get_strings_from_item($item, $stash);
-        log_trace("[compseq] Result from sequence item[$itemidx]: %s", \@array) if $COMPLETE_SEQUENCE_TRACE;
+        my @strings = _get_strings_from_item($item, $stash);
+        log_trace("[compseq] Result from sequence item[$itemidx]: %s", \@strings) if $COMPLETE_SEQUENCE_TRACE;
         my $res = Complete::Util::complete_array_elem(
             word => $word,
-            array => \@array,
+            array => \@strings,
         );
         if ($res && @$res == 1) {
             # the word can be completed directly (unambiguously) with this item.
             # move on to get more words from the next item.
             log_trace("[compseq] Word ($word) can be completed unambiguously with this sequence item[$itemidx], moving on to the next sequence item") if $COMPLETE_SEQUENCE_TRACE;
             substr($word, 0, length $res->[0]) = "";
+            #log_trace "TMP: cur_word=%s", $word;
             $stash->{cur_word} = $word;
             push @prefixes_from_completed_items, $res->[0];
             next;
@@ -200,7 +202,7 @@ sub complete_sequence {
             # word already contains this item and the next.
             my $num_matches = 0;
             my $matching_str;
-            for my $str (@array) {
+            for my $str (@strings) {
                 # XXX perhaps we want to be case-insensitive?
                 if (index($word, $str) == 0) {
                     $num_matches++;
